@@ -50,18 +50,26 @@ class ALBEF(nn.Module):
             self.momentum = 0.995
             
             
-    def forward(self, image, text, targets, alpha=0, train=True):
-        
-        image_embeds = self.visual_encoder(image) 
+    def forward(self, image, text, targets, alpha=0, train=True): 
 
         captions, questions = text
-        caption_output = self.text_encoder(captions.input_ids,
-                                          attention_mask = captions.attention_mask,
-                                          return_dict = True, mode = 'text')          
-        caption_embeds = caption_output.last_hidden_state
+        assert image is not None or captions is not None, "at least none modality should be presented"
+        
+        if image is not None:
+            image_embeds = self.visual_encoder(image)
+        if captions is not None:
+            caption_output = self.text_encoder(captions.input_ids,
+                                            attention_mask = captions.attention_mask,
+                                            return_dict = True, mode = 'text')          
+            caption_embeds = caption_output.last_hidden_state
 
-        multimodal_embeds = torch.cat((image_embeds, caption_embeds), axis=1)
-        multimodal_atts = torch.ones(multimodal_embeds.size()[:-1],dtype=torch.long).to(image.device)  
+        if image is not None and captions is not None:
+            multimodal_embeds = torch.cat((image_embeds, caption_embeds), axis=1)
+        elif image is not None:
+            multimodal_embeds = image_embeds
+        elif captions is not None:
+            multimodal_embeds = caption_embeds
+        multimodal_atts = torch.ones(multimodal_embeds.size()[:-1],dtype=torch.long).to(multimodal_embeds.device)  
         # print(image_embeds.shape)
         # print(caption_embeds.shape)
         # print(multimodal_embeds.shape, multimodal_atts.shape)
@@ -77,12 +85,22 @@ class ALBEF(nn.Module):
             if self.distill:                
                 with torch.no_grad():
                     self._momentum_update()
-                    image_embeds_m = self.visual_encoder_m(image)
-                    caption_output_m = self.text_encoder_m(captions.input_ids,
-                                          attention_mask = captions.attention_mask,
-                                          return_dict = True, mode = 'text')
-                    caption_embeds_m = caption_output_m.last_hidden_state
-                    multimodal_embeds_m = torch.cat((image_embeds_m, caption_embeds_m), axis=1)
+            
+                    if image is not None:
+                        image_embeds_m = self.visual_encoder_m(image)
+                    if captions is not None:
+                        caption_output_m = self.text_encoder_m(captions.input_ids,
+                                                        attention_mask = captions.attention_mask,
+                                                        return_dict = True, mode = 'text')          
+                        caption_embeds_m = caption_output_m.last_hidden_state
+
+                    if image is not None and captions is not None:
+                        multimodal_embeds_m = torch.cat((image_embeds_m, caption_embeds_m), axis=1)
+                    elif image is not None:
+                        multimodal_embeds_m = image_embeds_m
+                    elif captions is not None:
+                        multimodal_embeds_m = caption_embeds_m
+                    
                     output_m = self.text_encoder_m(questions.input_ids, 
                                                attention_mask = questions.attention_mask, 
                                                encoder_hidden_states = multimodal_embeds_m,

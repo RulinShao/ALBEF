@@ -14,7 +14,8 @@ class travlr_dataset(Dataset):
                  image_size=384, image_background_color=(255, 255, 255), random_background_shades=False):
         df = pd.read_csv(vqa_root + index_file, index_col=0)
         df["id"] = df.index
-        if no_caption:
+        self.no_caption = no_caption
+        if not no_caption:
             df["Q"] = df['query'].apply(lambda x: ' '.format(x))
         else:
             df["Q"] = df['query']
@@ -98,7 +99,10 @@ class travlr_dataset(Dataset):
 
     def __getitem__(self, index):
         target = self.answer_list[index]
-        caption = self.caption_list[index]
+        if self.no_caption:
+            caption = None
+        else:
+            caption = self.caption_list[index]
         question = self.question_list[index]
         image = self.image_list[index]
         dropout_caption = self.dropout_arr is not None and self.dropout_arr[index] == 1
@@ -115,7 +119,8 @@ class travlr_dataset(Dataset):
         if self.no_image or dropout_image:
             # image_path = os.path.join("/home/kengjich/blank/images/-1.jpg")
             
-            image = Image.new('RGB',(self.image_size, self.image_size), background_color)
+            # image = Image.new('RGB',(self.image_size, self.image_size), background_color)
+            image = None
         else:
             image_path = os.path.join(self.vqa_root, "images/" + str(image) + ".jpg")
             image = Image.open(image_path).convert('RGB')
@@ -125,11 +130,18 @@ class travlr_dataset(Dataset):
                     if image_data[i, j] == (255, 255, 255): # The original dataset is while background
                         image_data[i, j] = background_color
                         
-        image = self.transform(image)
+            image = self.transform(image)
         text = [caption, question]
 
         # question = pre_question(caption,self.max_ques_words)
-        return image, text, int(target)
+        if not self.no_caption and not self.no_image:
+            return image, [caption, question], int(target)
+        elif self.no_caption:
+            return image, question, int(target)
+        elif self.no_image:
+            return [caption, question], int(target)
+        else:
+            raise AttributeError
 
 
 class custom_dataset(Dataset):

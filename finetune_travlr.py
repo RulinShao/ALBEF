@@ -48,35 +48,96 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
     warmup_iterations = warmup_steps*step_size  
 
     accum_iter = config['accum_iter']
- 
-    for i,(images, text, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
     
-        images, targets = images.to(device,non_blocking=True), targets.to(device,non_blocking=True)
-        captions, questions = text
+    if not config['no_caption'] and not config['no_image']:
+        for i,(images, text, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         
-        caption_inputs = tokenizer(captions, padding='longest', return_tensors="pt").to(device)   
-        question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
-        text_inputs = [caption_inputs, question_inputs]
-        
-        if epoch>0 or not config['warm_up']:
-            alpha = config['alpha']
-        else:
-            alpha = config['alpha']*min(1,i/len(data_loader))
+            images, targets = images.to(device,non_blocking=True), targets.to(device,non_blocking=True)
+            captions, questions = text
+            
+            caption_inputs = tokenizer(captions, padding='longest', return_tensors="pt").to(device)   
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [caption_inputs, question_inputs]
+            
+            if epoch>0 or not config['warm_up']:
+                alpha = config['alpha']
+            else:
+                alpha = config['alpha']*min(1,i/len(data_loader))
 
-        loss = model(images, text_inputs, targets=targets, train=True, alpha=alpha)
-        loss = loss / accum_iter
-        
-        accelerator.backward(loss)
+            loss = model(images, text_inputs, targets=targets, train=True, alpha=alpha)
+            loss = loss / accum_iter
+            
+            accelerator.backward(loss)
 
-        if ((i + 1) % accum_iter == 0) or (i + 1 == len(data_loader)):
-            optimizer.step()
-            optimizer.zero_grad()
-               
-        metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-        metric_logger.update(loss=loss.item())
+            if ((i + 1) % accum_iter == 0) or (i + 1 == len(data_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+            metric_logger.update(loss=loss.item())
+            
+            if epoch==0 and i%step_size==0 and i<=warmup_iterations: 
+                scheduler.step(i//step_size)   
+    
+    elif config['no_caption']:
+        for i,(images, questions, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         
-        if epoch==0 and i%step_size==0 and i<=warmup_iterations: 
-            scheduler.step(i//step_size)         
+            images, targets = images.to(device,non_blocking=True), targets.to(device,non_blocking=True)
+            
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [None, question_inputs]
+            
+            if epoch>0 or not config['warm_up']:
+                alpha = config['alpha']
+            else:
+                alpha = config['alpha']*min(1,i/len(data_loader))
+
+            loss = model(images, text_inputs, targets=targets, train=True, alpha=alpha)
+            loss = loss / accum_iter
+            
+            accelerator.backward(loss)
+
+            if ((i + 1) % accum_iter == 0) or (i + 1 == len(data_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+            metric_logger.update(loss=loss.item())
+            
+            if epoch==0 and i%step_size==0 and i<=warmup_iterations: 
+                scheduler.step(i//step_size)
+    
+    elif config['no_image']:
+        for i,(text, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        
+            targets = targets.to(device,non_blocking=True)
+            captions, questions = text
+            
+            caption_inputs = tokenizer(captions, padding='longest', return_tensors="pt").to(device)   
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [caption_inputs, question_inputs]
+            
+            if epoch>0 or not config['warm_up']:
+                alpha = config['alpha']
+            else:
+                alpha = config['alpha']*min(1,i/len(data_loader))
+
+            loss = model(None, text_inputs, targets=targets, train=True, alpha=alpha)
+            loss = loss / accum_iter
+            
+            accelerator.backward(loss)
+
+            if ((i + 1) % accum_iter == 0) or (i + 1 == len(data_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+            metric_logger.update(loss=loss.item())
+            
+            if epoch==0 and i%step_size==0 and i<=warmup_iterations: 
+                scheduler.step(i//step_size)
+    else:
+        raise AttributeError
         
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -94,21 +155,70 @@ def evaluate(model, data_loader, tokenizer, device, config):
     header = 'Evaluation:'
     print_freq = 50
 
-    for images, text, targets in metric_logger.log_every(data_loader, print_freq, header):
-        
-        images, targets = images.to(device,non_blocking=True), targets.to(device,non_blocking=True)   
-        
-        text_inputs = tokenizer(text, padding='longest', return_tensors="pt").to(device)  
+    if not config['no_caption'] and not config['no_image']:
+        for images, text, targets in metric_logger.log_every(data_loader, print_freq, header):
+            
+            if images is not None:
+                images = images.to(device,non_blocking=True)
+            targets = targets.to(device,non_blocking=True)  
+            captions, questions = text
+            
+            if caption is not None:
+                caption_inputs = tokenizer(captions, padding='longest', return_tensors="pt").to(device)
+            else:
+                caption_inputs = None   
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [caption_inputs, question_inputs] 
 
-        prediction = model(images, text_inputs, targets=targets, train=False)  
- 
-        _, pred_class = prediction.max(1)
-        accuracy = (targets==pred_class).sum() / targets.size(0)
+            prediction = model(images, text_inputs, targets=targets, train=False)  
+    
+            _, pred_class = prediction.max(1)
+            accuracy = (targets==pred_class).sum() / targets.size(0)
 
-        metric_logger.meters['acc'].update(accuracy.item(), n=images.size(0))
-        
-        f1_macro = f1_score(targets.cpu(), pred_class.cpu(), average='macro')
-        metric_logger.meters['f1_macro'].update(f1_macro, n=images.size(0))
+            metric_logger.meters['acc'].update(accuracy.item(), n=images.size(0))
+            
+            f1_macro = f1_score(targets.cpu(), pred_class.cpu(), average='macro')
+            metric_logger.meters['f1_macro'].update(f1_macro, n=images.size(0))
+    
+    if config['no_caption']:
+        for images, questions, targets in metric_logger.log_every(data_loader, print_freq, header):
+            
+            if images is not None:
+                images = images.to(device,non_blocking=True)
+            targets = targets.to(device,non_blocking=True)  
+            
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [None, question_inputs]
+
+            prediction = model(images, text_inputs, targets=targets, train=False)  
+    
+            _, pred_class = prediction.max(1)
+            accuracy = (targets==pred_class).sum() / targets.size(0)
+
+            metric_logger.meters['acc'].update(accuracy.item(), n=images.size(0))
+            
+            f1_macro = f1_score(targets.cpu(), pred_class.cpu(), average='macro')
+            metric_logger.meters['f1_macro'].update(f1_macro, n=images.size(0))
+    
+    if config['no_image']:
+        for text, targets in metric_logger.log_every(data_loader, print_freq, header):
+            
+            targets = targets.to(device,non_blocking=True)  
+            captions, questions = text
+            
+            caption_inputs = tokenizer(captions, padding='longest', return_tensors="pt").to(device)
+            question_inputs = tokenizer(questions, padding='longest', return_tensors="pt").to(device)  
+            text_inputs = [caption_inputs, question_inputs] 
+
+            prediction = model(None, text_inputs, targets=targets, train=False)  
+    
+            _, pred_class = prediction.max(1)
+            accuracy = (targets==pred_class).sum() / targets.size(0)
+
+            metric_logger.meters['acc'].update(accuracy.item(), n=captions.size(0))
+            
+            f1_macro = f1_score(targets.cpu(), pred_class.cpu(), average='macro')
+            metric_logger.meters['f1_macro'].update(f1_macro, n=captions.size(0))
                 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
