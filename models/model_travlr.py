@@ -53,24 +53,40 @@ class ALBEF(nn.Module):
     def forward(self, image, text, targets, alpha=0, train=True):
         
         image_embeds = self.visual_encoder(image) 
-        image_atts = torch.ones(image_embeds.size()[:-1],dtype=torch.long).to(image.device)        
+
+        captions, questions = text
+        caption_output = self.text_encoder(captions.input_ids,
+                                          attention_mask = captions.attention_mask,
+                                          return_dict = True, mode = 'text')          
+        caption_embeds = caption_output.last_hidden_state
+
+        multimodal_embeds = torch.cat((image_embeds, caption_embeds), axis=1)
+        multimodal_atts = torch.ones(multimodal_embeds.size()[:-1],dtype=torch.long).to(image.device)  
+        # print(image_embeds.shape)
+        # print(caption_embeds.shape)
+        # print(multimodal_embeds.shape, multimodal_atts.shape)
         
         if train:
-            output = self.text_encoder(text.input_ids, 
-                                       attention_mask = text.attention_mask, 
-                                       encoder_hidden_states = image_embeds,
-                                       encoder_attention_mask = image_atts,        
+            output = self.text_encoder(questions.input_ids, 
+                                       attention_mask = questions.attention_mask, 
+                                       encoder_hidden_states = multimodal_embeds,
+                                       encoder_attention_mask = multimodal_atts,        
                                        return_dict = True
                                       )         
             prediction = self.cls_head(output.last_hidden_state[:,0,:])                
             if self.distill:                
                 with torch.no_grad():
                     self._momentum_update()
-                    image_embeds_m = self.visual_encoder_m(image) 
-                    output_m = self.text_encoder_m(text.input_ids, 
-                                               attention_mask = text.attention_mask, 
-                                               encoder_hidden_states = image_embeds_m,
-                                               encoder_attention_mask = image_atts,        
+                    image_embeds_m = self.visual_encoder_m(image)
+                    caption_output_m = self.text_encoder_m(captions.input_ids,
+                                          attention_mask = captions.attention_mask,
+                                          return_dict = True, mode = 'text')
+                    caption_embeds_m = caption_output_m.last_hidden_state
+                    multimodal_embeds_m = torch.cat((image_embeds_m, caption_embeds_m), axis=1)
+                    output_m = self.text_encoder_m(questions.input_ids, 
+                                               attention_mask = questions.attention_mask, 
+                                               encoder_hidden_states = multimodal_embeds_m,
+                                               encoder_attention_mask = multimodal_atts,        
                                                return_dict = True
                                               )           
                     prediction_m = self.cls_head_m(output_m.last_hidden_state[:,0,:])   
@@ -82,10 +98,10 @@ class ALBEF(nn.Module):
             return loss 
             
         else:
-            output = self.text_encoder(text.input_ids, 
-                                       attention_mask = text.attention_mask, 
-                                       encoder_hidden_states = image_embeds,
-                                       encoder_attention_mask = image_atts,        
+            output = self.text_encoder(questions.input_ids, 
+                                       attention_mask = questions.attention_mask, 
+                                       encoder_hidden_states = multimodal_embeds,
+                                       encoder_attention_mask = multimodal_atts,        
                                        return_dict = True
                                       )         
             prediction = self.cls_head(output.last_hidden_state[:,0,:])                        

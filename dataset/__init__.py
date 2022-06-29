@@ -7,6 +7,7 @@ from dataset.caption_dataset import re_train_dataset, re_eval_dataset, pretrain_
 from dataset.nlvr_dataset import nlvr_dataset
 from dataset.ve_dataset import ve_dataset
 from dataset.vqa_dataset import vqa_dataset
+from dataset.custom_dataset import custom_dataset, travlr_dataset
 from dataset.grounding_dataset import grounding_dataset
 
 from dataset.randaugment import RandomAugment
@@ -51,6 +52,11 @@ def create_dataset(dataset, config):
         train_dataset = vqa_dataset(config['train_file'], train_transform, config['vqa_root'], config['vg_root'], split='train') 
         vqa_test_dataset = vqa_dataset(config['test_file'], test_transform, config['vqa_root'], config['vg_root'], split='test', answer_list=config['answer_list'])       
         return train_dataset, vqa_test_dataset
+    
+    elif dataset=='custom_vqa':
+        train_dataset = custom_dataset(config['train_file'], train_transform, config['vqa_root'], split="train") 
+        val_dataset = custom_dataset(config['train_file'], test_transform, config['vqa_root'], split="test")       
+        return train_dataset, val_dataset
 
     elif dataset=='nlvr':   
         train_dataset = nlvr_dataset(config['train_file'], train_transform, config['image_root'])  
@@ -63,6 +69,18 @@ def create_dataset(dataset, config):
         val_dataset = ve_dataset(config['val_file'], test_transform, config['image_root'])  
         test_dataset = ve_dataset(config['test_file'], test_transform, config['image_root'])                
         return train_dataset, val_dataset, test_dataset     
+    
+    elif dataset=='custom':
+        train_dataset = custom_dataset(config['train_file'], train_transform, config['vqa_root'], split="train", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], dropout=config['mixed'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades'])
+        val_dataset = custom_dataset(config['train_file'], test_transform, config['vqa_root'], split="val", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades']) 
+        test_dataset = custom_dataset(config['train_file'], test_transform, config['vqa_root'], split="test", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades']) 
+        return train_dataset, val_dataset, test_dataset
+    
+    elif dataset=='travlr':
+        train_dataset = travlr_dataset(config['train_file'], train_transform, config['vqa_root'], split="train", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], dropout=config['mixed'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades'])
+        val_dataset = travlr_dataset(config['train_file'], test_transform, config['vqa_root'], split="val", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades']) 
+        test_dataset = travlr_dataset(config['train_file'], test_transform, config['vqa_root'], split="test", no_caption=config['no_caption'], no_image=config['no_image'], factor=config['factor'], image_background_color=tuple(config['image_background_color']), random_background_shades=config['random_background_shades']) 
+        return train_dataset, val_dataset, test_dataset
     
     elif dataset=='grounding':
         train_transform = transforms.Compose([                        

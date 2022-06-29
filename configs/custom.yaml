@@ -1,0 +1,34 @@
+train_file: 'index.csv'
+vqa_root: '/home/ubuntu/data/TraVLR/comparison8k/'
+
+# Exp setting
+image_res: 384
+batch_size_train: 8
+batch_size_test: 16
+accum_iter: 32
+
+no_caption: False
+no_image: False
+mixed: False
+factor: 1
+add_prompt: False #edit this
+
+random_background_shades: True
+image_background_color: [0, 0, 0] # Use this color as background if 'random_background_shades' is False
+
+
+# ALBEF parameters
+alpha: 0.4
+distill: True
+warm_up: True
+num_labels: 2
+
+bert_config: 'configs/config_bert.json'
+
+optimizer: {opt: adamW, lr: 2e-5, weight_decay: 0.02}
+schedular: {sched: cosine, lr: 2e-5, epochs: 80, min_lr: 1e-6, decay_rate: 1, warmup_lr: 1e-6, warmup_epochs: 8, cooldown_epochs: 0}
+
+# Others
+wandb_project: 'CardinalityDataset4'
+wandb_run_name: "44. test_Dec19, batch_size=256, model=albef"
+wandb_notes: 'train from scratch, mixed, factor=4, seed=2'
